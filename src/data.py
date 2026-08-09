@@ -6,15 +6,16 @@ from scipy.io.arff import loadarff
 from src.config import TARGET_COL
 
 
-def load_data(path: str | Path) -> pd.DataFrame:
+def load_data(path: str | Path, deduplicate: bool = True) -> pd.DataFrame:
     """Load the Polish companies bankruptcy dataset from an ARFF file.
 
     Expects the UCI format, where the target column `class` arrives as byte
-    strings. Full-row duplicates are dropped, so the result has fewer rows
-    than the source file.
+    strings and is decoded here.
 
     Args:
         path: Path to the ARFF file.
+        deduplicate: Whether to drop full-row duplicates, keeping the first
+            occurrence. Defaults to True; pass False to inspect the raw file.
 
     Returns:
         Features under their original names (Attr1..Attr64) plus the binary
@@ -27,7 +28,8 @@ def load_data(path: str | Path) -> pd.DataFrame:
 
     df = df.rename(columns={"class": TARGET_COL})
 
-    df = df.drop_duplicates(keep="first")
+    if deduplicate:
+        df = df.drop_duplicates(keep="first")
     df = df.reset_index(drop=True)
 
     return df
