@@ -6,6 +6,10 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 RAW_DATA_DIR = PROJECT_ROOT / "data" / "raw"
 DATA_5YEAR_PATH = RAW_DATA_DIR / "5year.arff"
 
+# split
+RANDOM_STATE = 0
+HOLDOUT_SIZE = 0.25
+
 # The source ARFF names the target column `class`; renamed on load in data.py.
 TARGET_COL = "is_bankrupt"
 
