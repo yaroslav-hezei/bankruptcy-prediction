@@ -6,6 +6,10 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 RAW_DATA_DIR = PROJECT_ROOT / "data" / "raw"
 DATA_5YEAR_PATH = RAW_DATA_DIR / "5year.arff"
 
+# Analyst review capacity as a share of the portfolio. A share, not a fixed
+# count — CV folds and holdout differ in size.
+TOP_K_SHARE = 0.03
+
 # split
 RANDOM_STATE = 0
 HOLDOUT_SIZE = 0.25
