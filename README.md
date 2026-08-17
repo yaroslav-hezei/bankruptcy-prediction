@@ -110,3 +110,20 @@ of large accounts carry much of the receivable, the cost of a false negative var
 magnitude between counterparties, and the queue would be ranked by `score × exposure` rather than
 by score alone. The dataset carries no exposure figures, so the simplification is unavoidable. It
 is repeated in Limitations.
+
+## Baselines
+
+Fixed before any tuned model, on cross-validation over the training split.
+
+| | PR-AUC | precision@top-3% |
+|---|---|---|
+| Random ranking | 0.070 | 0.070 |
+| Altman Z' (1983) | 0.279 ± 0.049 | 0.442 ± 0.099 |
+| Logistic regression | 0.348 ± 0.039 | 0.492 ± 0.081 |
+
+The regression is deliberately plain: median imputation, standard scaling,
+`class_weight="balanced"`, all 64 features, no selection.
+
+The gap of 0.069 sits below the combined spread of 0.088 and is not read as an improvement — even
+though Altman's weights were calibrated on US manufacturing firms in the 1970s and saw none of this
+data. Everything that follows is measured against 0.279.
