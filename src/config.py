@@ -10,6 +10,11 @@ DATA_5YEAR_PATH = RAW_DATA_DIR / "5year.arff"
 # count — CV folds and holdout differ in size.
 TOP_K_SHARE = 0.03
 
+# 5x5 rather than a single 5-fold pass: with ~61 positives per validation fold,
+# the spread between splits is comparable to the gap between models.
+CV_N_SPLITS = 5
+CV_N_REPEATS = 5
+
 # split
 RANDOM_STATE = 0
 HOLDOUT_SIZE = 0.25
