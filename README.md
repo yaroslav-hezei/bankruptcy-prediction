@@ -24,7 +24,7 @@ arbitrary order. A flag has no consequence for the counterparty and is invisible
 what makes the cost of a false alarm small (see below).
 
 In production a second, higher threshold is usually layered on top for automatic action, such as
-reducing a credit limit. That is deliberately out of scope here: 4388 training rows and 306
+reducing a credit limit. That is deliberately out of scope here: 4387 training rows and 306
 positives do not justify automated decisions with consequences for third parties, and an automatic
 action would also destroy the labels — a counterparty whose terms were cut can no longer be
 observed defaulting under the original terms.
@@ -50,11 +50,11 @@ actually has time to review, how many were worth reviewing". That is **precision
 set by review capacity rather than by a round number.
 
 **k is fixed as a share of the scored population, not as a count.** A cross-validation fold holds
-878 rows while the holdout holds 1462. A fixed k = 60 would mean the top 6.8% of a fold against
+878 rows while the holdout holds 1463. A fixed k = 60 would mean the top 6.8% of a fold against
 the top 4.1% of the holdout — two different points on the precision-recall curve, where precision
 falls as you go deeper into the list. The two numbers would differ for arithmetic reasons before
 the model contributed anything. Expressed as a share, the operating point is the same everywhere:
-26 companies per fold, 44 in the holdout.
+26 companies per fold, 43 in the holdout.
 
 The cost of this choice is granularity. With 26 companies in a fold, precision moves in steps of
 1/26 ≈ 0.04 and the spread across folds is wide. This is reported, not smoothed over.
