@@ -22,6 +22,18 @@ HOLDOUT_SIZE = 0.25
 # The source ARFF names the target column `class`; renamed on load in data.py.
 TARGET_COL = "is_bankrupt"
 
+# Columns whose missingness encodes a real financial state and is used as a feature.
+# Selected from the 49 columns with gaps: rare ones dropped, identical masks collapsed to
+# the lowest-numbered column. Attr21 is excluded on purpose (possible collection artefact).
+MISSING_INDICATOR_COLS = [
+    "Attr24",  # no three-year profit figure
+    "Attr27",  # no interest paid
+    "Attr28",  # no fixed assets (mask identical to Attr53, Attr54, Attr64)
+    "Attr37",  # no long-term liabilities
+    "Attr41",  # operating profit plus depreciation is zero
+    "Attr45",  # no inventory (mask identical to Attr60)
+]
+
 # Display labels only: feature columns keep their original Attr1..Attr64 names so
 # that findings stay traceable to the UCI attribute description and the published
 # literature. Text is quoted verbatim from UCI — do not reword it.
