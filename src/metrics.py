@@ -1,7 +1,8 @@
 import numpy as np
+import numpy.typing as npt
 
 
-def precision_at_k(y_true: np.ndarray, y_score: np.ndarray, k: int) -> float:
+def precision_at_k(y_true: npt.ArrayLike, y_score: np.ndarray, k: int) -> float:
     """Share of positives among the k highest-scored samples.
 
     Ties at the cut-off are broken by input order: of the samples sharing the
