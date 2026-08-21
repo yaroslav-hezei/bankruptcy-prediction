@@ -34,6 +34,11 @@ MISSING_INDICATOR_COLS = [
     "Attr45",  # no inventory (mask identical to Attr60)
 ]
 
+# Feature columns dropped before modelling.
+# Attr21 is undefined when prior-year revenue is zero; those 80 rows are 97.5% bankrupt and
+# carry the column's entire effect, which a live counterparty would never reproduce.
+EXCLUDED_FEATURES = ["Attr21"]
+
 # Display labels only: feature columns keep their original Attr1..Attr64 names so
 # that findings stay traceable to the UCI attribute description and the published
 # literature. Text is quoted verbatim from UCI — do not reword it.

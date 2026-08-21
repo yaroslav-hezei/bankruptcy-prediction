@@ -14,8 +14,9 @@ Once a month the model scores the entire portfolio and ranks it by bankruptcy ri
 (~60 companies)** go into a queue for manual review by an analyst, who has access to information
 the model does not have: payment history with us, credit bureau records of arrears towards other
 creditors, court and insolvency filings, and news. A full review takes roughly two hours; three
-analysts spending about a third of their time on portfolio monitoring absorb about 60 reviews a
-month.
+analysts spending about 35% of a 120-hour working month on portfolio monitoring have 126 hours
+between them, or 63 reviews. That is rounded down to 60, so the operating point falls on a round
+3% of the portfolio.
 
 The model does not decide anything. It does not replace the review, and it is not expected to
 predict bankruptcy more accurately than an analyst with bureau data. Its only job is to order the
@@ -50,7 +51,7 @@ actually has time to review, how many were worth reviewing". That is **precision
 set by review capacity rather than by a round number.
 
 **k is fixed as a share of the scored population, not as a count.** A cross-validation fold holds
-878 rows while the holdout holds 1463. A fixed k = 60 would mean the top 6.8% of a fold against
+about 878 rows while the holdout holds 1463. A fixed k = 60 would mean the top 6.8% of a fold against
 the top 4.1% of the holdout — two different points on the precision-recall curve, where precision
 falls as you go deeper into the list. The two numbers would differ for arithmetic reasons before
 the model contributed anything. Expressed as a share, the operating point is the same everywhere:
@@ -87,10 +88,20 @@ reduction of credit terms; under manual review it does not.
 - Validation is `RepeatedStratifiedKFold` (5 splits × 5 repeats), giving 25 fits per model.
 - Every metric is reported as **mean ± std across folds**. A mean without a spread is not
   interpreted.
-- **A difference smaller than the sum of the two standard deviations is reported as
-  indistinguishable**, not as an improvement. With about 61 positives in a validation fold, fold-to
-  -fold variance is comparable to the differences between models, and a table of results that
-  refuses to name a winner is the honest outcome rather than a weak one.
+- **Between two results reported independently, a difference smaller than the sum of the two
+  standard deviations is reported as indistinguishable**, not as an improvement. With about 61
+  positives in a validation fold, fold-to-fold variance is comparable to the differences between
+  models, and a table of results that refuses to name a winner is the honest outcome rather than a
+  weak one.
+- **Decisions about construction** — whether a column is dropped, whether a transformer earns its
+  place — are settled by a paired comparison instead. Both configurations run on the same folds,
+  the per-fold differences are taken, and the reported figure is their mean and twice its standard
+  error, `2 * std / sqrt(n)`. Sharing the folds cancels the fold-to-fold spread: differences
+  scatter by about 0.003 where the metric itself scatters by 0.042, so effects an order of
+  magnitude below the threshold above become visible. The standard error assumes independent
+  measurements, and 25 folds are 5 splits repeated 5 times with overlapping rows, so the true
+  uncertainty is somewhat larger than the formula gives — comfortable for telling 0.08 from 0.000,
+  not a test to lean on near the boundary.
 - The holdout is evaluated **once**, at the end, with the final pipeline. Every intermediate
   decision is made on cross-validation.
 - With ~102 positives in the holdout, the confidence interval on the final figure is wide; a gap
