@@ -138,3 +138,91 @@ The regression is deliberately plain: median imputation, standard scaling,
 The gap of 0.069 sits below the combined spread of 0.088 and is not read as an improvement — even
 though Altman's weights were calibrated on US manufacturing firms in the 1970s and saw none of this
 data. Everything that follows is measured against 0.279.
+
+## Feature set
+
+The file is the five-year subset of the Polish companies bankruptcy data (UCI 365): predictions
+one year ahead, 64 financial ratios named `Attr1`–`Attr64`. The names are kept as they are so that
+every column stays traceable to the UCI description; `FEATURE_LABELS` in `src/config.py` carries
+the readable descriptions for plot captions only.
+
+After removing 60 groups of exact duplicates the data is 5850 × 65 with 408 positives (7.0%). The
+stratified split leaves 4387 training rows with 306 positives and 1463 holdout rows with 102.
+
+Reaching the model: **63 ratios** (`Attr21` excluded, see below) plus **6 missingness indicators**
+(`Attr24`, `Attr27`, `Attr28`, `Attr37`, `Attr41`, `Attr45`). The indicators are not an arbitrary
+selection: 49 columns contain missing values, 11 of them in more than 1% of rows, and several
+missingness masks coincide bitwise — the inventory block and the fixed-asset block collapse into
+one indicator each, with the lowest-numbered column standing for the block. Whether a value is
+missing carries signal on its own; the fact that `Attr27` is absent separates the classes at
+ROC-AUC 0.627.
+
+No engineered features were added. Two candidates were tested and both were rejected on measured
+grounds, recorded in `notebooks/05_feature_engineering.ipynb`.
+
+## Decisions
+
+| Decision | Reason |
+|---|---|
+| Everything after the split is done on the training rows only | Transformation choices are made after looking at the data, so the holdout has to be unseen when they are made |
+| Two pipeline factories rather than one with a branch parameter | The branches share only the indicator block; a single factory would be a switch statement pretending to be a pipeline |
+| The model is an argument to the factory | The step is named `model` in one place, which is what `RandomizedSearchCV` addresses |
+| `feature_cols` is a parameter, `MISSING_INDICATOR_COLS` comes from config | The feature list moves between experiments; the indicator list was fixed by the missingness analysis |
+| `MissingIndicator(features="all")` rather than the default | The default decides which columns to emit from the data, so the output width would float between folds |
+| `remainder="drop"` written out explicitly | Every column is named in a triplet, but the decision about the remainder should be visible — `Attr21` is what lands there |
+| `set_output(transform="pandas")` on both branches | `feature_names_in_` then catches column mismatches, and names are needed for SHAP and for reading `coef_` |
+| `Attr21` dropped entirely | The whole effect sits in 80 rows where the value is missing, 78 of them bankrupt; on the other 4307 rows the column is worth 0.0054 ± 0.0111. Measured price: 0.734 instead of 0.817 PR-AUC in the boosting branch |
+| Missingness indicators kept in the boosting branch despite measuring −0.0004 ± 0.0006 | Measured at default hyperparameters; NaN routing changes after tuning, so the result is worth re-checking rather than acting on |
+| `QuantileTransformer` inside the linear pipeline | Tails reach 694× the 99th percentile; `StandardScaler` is linear and does not change shape |
+| `n_quantiles=500` | About 3510 rows in the training part of a fold; the default of 1000 would copy the sample |
+| Median imputation rather than a constant | The mean is inflated by the tails, and a constant becomes a subgroup marker for a tree |
+| Feature importance is read by blocks | At a correlation of 0.999 importance is split arbitrarily within a group |
+| `RepeatedStratifiedKFold`, 5 × 5 | 7% positives, about 61 of them per validation fold |
+| The holdout is evaluated once, at the end | Anything else is fitting to the test set |
+| `cross_validate_model` and `compare_pipelines` return per-fold arrays | A mean can always be derived from the folds; the folds cannot be recovered from a mean |
+| Ties in precision@top-k are broken by row order | It matches how the queue would actually be filled |
+| Altman is wrapped in a scikit-learn compatible class | One interface, identical folds, a fair comparison |
+| No negative-equity flag | −0.0015 ± 0.0022 PR-AUC. Risk varies with the level of equity rather than with its sign, and the level is already in `Attr10`; binarising it at the accounting boundary only coarsens what the model has |
+| No correlation-based feature selection | −0.0097 ± 0.0095 at a 0.99 cut and −0.0285 ± 0.0135 at 0.95, the loss growing with the cut. With 63 features against 4387 rows there is no penalty for keeping duplicated columns, and L2 already stabilises the weights inside a correlated group |
+
+## Limitations
+
+**Selection bias from pre-filtering.** The ARFF header records
+`SubsetByExpression -E not ismissing(ATT20)`: companies with no current-year revenue were removed
+before the file was published. The population the model is fitted on is therefore not the
+population it would score in production, and the direction of the bias is unknown.
+
+**`Attr21` is probably a collection artefact, and its price is known.** Missingness in the column
+predicts the target almost perfectly — 78 of the 80 rows with a missing value are bankrupt — and
+tree models exploit it whether or not an explicit indicator is supplied, since the marker can be
+reconstructed from the column itself. Constant imputation does not help either: the constant
+becomes the subgroup label. A company that is still trading has last year's filing by definition,
+so the pattern should not recur in production. This cannot be settled inside the data, because the
+same contamination is present in the holdout in the same proportion, and every internal estimate
+would agree with itself while being wrong. The column was dropped and the cost measured: 0.734
+against 0.817.
+
+**No feature selection was performed, and that conclusion does not travel.** Correlation-based
+selection was measured and rejected, but the measurement holds for 63 features, 4387 rows and a
+regularised linear model. With many more features, fewer rows, or an unregularised model the trade
+would look different.
+
+**Near-duplicate detection is conservative.** Near-duplicates were searched by rounding all
+features to k decimals for k = 1..6 and then looking for exact matches. Five pairs turned up, none
+containing a positive, and the estimated effect on PR-AUC is zero, so validation stays row-wise and
+`GroupKFold` is not needed. The method finds rows that are close on every feature at once; it would
+miss rows that differ substantially on one ratio.
+
+**The split is random, not temporal.** All companies in the file are observed over the same
+period, so there is no way to train on earlier years and validate on later ones. A model that is
+put into production is asked to generalise forward in time, and a random split does not measure
+that. Macroeconomic conditions shift, and with them the base rate.
+
+**Every business assumption is invented.** Exposure, the cost of each error type, the portfolio
+size and the capacity of the credit control team are not in the dataset and were supplied to give
+the metrics an operating point. They are internally consistent, not observed.
+
+**Exposure is treated as equal across counterparties.** In a real portfolio a few large accounts
+carry much of the receivable, so the cost of a false negative varies by orders of magnitude and the
+queue would be ordered by `score × exposure`. The dataset carries no amounts, so the simplification
+is unavoidable.
