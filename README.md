@@ -86,8 +86,8 @@ reduction of credit terms; under manual review it does not.
 ### Reporting rules
 
 - Validation is `RepeatedStratifiedKFold` (5 splits × 5 repeats), giving 25 fits per model.
-- Every metric is reported as **mean ± std across folds**. A mean without a spread is not
-  interpreted.
+- Every metric is reported as **mean ± std across folds**, with the sample standard deviation
+  (`ddof=1`). A mean without a spread is not interpreted.
 - **Between two results reported independently, a difference smaller than the sum of the two
   standard deviations is reported as indistinguishable**, not as an improvement. With about 61
   positives in a validation fold, fold-to-fold variance is comparable to the differences between
@@ -133,11 +133,63 @@ Fixed before any tuned model, on cross-validation over the training split.
 | Logistic regression | 0.348 ± 0.039 | 0.492 ± 0.081 |
 
 The regression is deliberately plain: median imputation, standard scaling,
-`class_weight="balanced"`, all 64 features, no selection.
+`class_weight="balanced"`, all 64 features, no selection. The baseline was fixed before `Attr21`
+was excluded and therefore runs on 64 columns rather than the 63 the later models see; including
+the column is worth 0.0067 ± 0.0045 to the linear branch, below the threshold of the protocol.
+The figures are left as they were recorded rather than restated after the fact.
 
 The gap of 0.069 sits below the combined spread of 0.088 and is not read as an improvement — even
 though Altman's weights were calibrated on US manufacturing firms in the 1970s and saw none of this
 data. Everything that follows is measured against 0.279.
+
+## Results
+
+Cross-validation over the training split, 25 folds. The holdout has not been evaluated.
+
+| Model | PR-AUC | precision@top-3% |
+|---|---|---|
+| Random ranking | 0.070 | 0.070 |
+| Altman Z' (1983) | 0.279 ± 0.049 | 0.442 ± 0.099 |
+| Logistic regression | 0.348 ± 0.039 | 0.492 ± 0.081 |
+| LightGBM, defaults | 0.734 ± 0.038 | 0.895 ± 0.062 |
+| **LightGBM, `n_estimators=400`** | **0.756 ± 0.039** | **0.922 ± 0.042** |
+
+At 26 companies per fold, precision@top-3% of 0.922 means 24 of the 26 reviewed companies were
+worth reviewing, against 2 expected under random ordering.
+
+The two rows above differ by 0.022, which is far below the sum of their standard deviations. They
+are reported side by side because the difference was established by a paired comparison on
+identical folds — +0.0221 ± 0.0054, better in 24 folds of 25 — and not by reading one mean against
+the other. The same applies to the experiments below: each is a paired difference against the
+default boosting pipeline, and none of them changed the final model.
+
+| Experiment | PR-AUC difference |
+|---|---|
+| `class_weight="balanced"` | +0.0012 ± 0.0078, 12 folds of 25 |
+| `RandomizedSearchCV`, 40 iterations | −0.0131 ± 0.0081, 6 folds of 25 |
+| `n_estimators` 800 rather than 400 | +0.0004 ± 0.0014, 13 folds of 25 |
+
+SMOTE was not run. Interpolating synthetic positives is incompatible with the native NaN handling
+in the boosting branch, and the mechanism it would have to guard against is worth stating anyway,
+since it is not the familiar "resample before the split". A resampler changes which rows exist, and
+`sklearn.pipeline.Pipeline` treats it like any other transformer, calling it on the validation fold
+too. Synthetic validation positives would then be interpolations between rows the model was trained
+on, and the positive rate in the fold would rise to 50%, so PR-AUC would be computed on a different
+problem altogether. `imblearn.pipeline.Pipeline` calls `fit_resample` during `fit` only.
+
+The search result is the interesting one. Every one of the forty candidates was more constrained
+than the default — `min_child_samples` drawn from 50–200 against a default of 20,
+`colsample_bytree` from 0.5–1.0 against 1.0, `reg_lambda` from 0.01–100 against 0. The ranges were
+chosen on the reasoning that 306 positives make overfitting likely, and the measurement contradicts
+it: the constraints cost quality without buying anything. The top ten candidates also span
+0.713–0.724 with per-candidate spreads of 0.031–0.043, so within these ranges the problem is
+insensitive to hyperparameters and the winning row reflects fold noise. Only the tree count, which
+was held fixed inside the search, turned out to matter: +0.0221 ± 0.0054 moving from 100 to 400,
+and nothing beyond that.
+
+`best_score_` from the search is not reported anywhere. It is the maximum of forty noisy estimates
+and optimistically biased by construction; the selected configuration was re-measured on the
+standard 5 × 5 scheme instead, which is where the −0.0131 above comes from.
 
 ## Feature set
 
@@ -172,7 +224,7 @@ grounds, recorded in `notebooks/05_feature_engineering.ipynb`.
 | `remainder="drop"` written out explicitly | Every column is named in a triplet, but the decision about the remainder should be visible — `Attr21` is what lands there |
 | `set_output(transform="pandas")` on both branches | `feature_names_in_` then catches column mismatches, and names are needed for SHAP and for reading `coef_` |
 | `Attr21` dropped entirely | The whole effect sits in 80 rows where the value is missing, 78 of them bankrupt; on the other 4307 rows the column is worth 0.0054 ± 0.0111. Measured price: 0.734 instead of 0.817 PR-AUC in the boosting branch |
-| Missingness indicators kept in the boosting branch despite measuring −0.0004 ± 0.0006 | Measured at default hyperparameters; NaN routing changes after tuning, so the result is worth re-checking rather than acting on |
+| Missingness indicators kept in the boosting branch despite measuring −0.0000 ± 0.0008 | Re-measured on the final configuration after the first result was recorded at defaults. The linear branch does use them, where median imputation would otherwise erase missingness, and the two factories stay symmetric; the cost on the boosting side is zero |
 | `QuantileTransformer` inside the linear pipeline | Tails reach 694× the 99th percentile; `StandardScaler` is linear and does not change shape |
 | `n_quantiles=500` | About 3510 rows in the training part of a fold; the default of 1000 would copy the sample |
 | Median imputation rather than a constant | The mean is inflated by the tails, and a constant becomes a subgroup marker for a tree |
@@ -184,6 +236,10 @@ grounds, recorded in `notebooks/05_feature_engineering.ipynb`.
 | Altman is wrapped in a scikit-learn compatible class | One interface, identical folds, a fair comparison |
 | No negative-equity flag | −0.0015 ± 0.0022 PR-AUC. Risk varies with the level of equity rather than with its sign, and the level is already in `Attr10`; binarising it at the accounting boundary only coarsens what the model has |
 | No correlation-based feature selection | −0.0097 ± 0.0095 at a 0.99 cut and −0.0285 ± 0.0135 at 0.95, the loss growing with the cut. With 63 features against 4387 rows there is no penalty for keeping duplicated columns, and L2 already stabilises the weights inside a correlated group |
+| No class weights in the final model | +0.0012 ± 0.0078. PR-AUC and precision@top-k depend on ranking alone, and the main effect of reweighting is a monotone shift that leaves the ordering intact. Boosting also reweights observations through the gradients on its own |
+| SMOTE not run | Interpolating synthetic positives is incompatible with the native NaN handling in the boosting branch: imputation would have to be added and the comparison would no longer differ by one factor. Recorded as an argument, not a measurement |
+| `n_estimators = 400`, everything else at defaults | Bounded on both sides: +0.0221 ± 0.0054 moving from 100 to 400, +0.0004 ± 0.0014 moving from 400 to 800 |
+| Randomised search rejected | −0.0131 ± 0.0081 against the defaults. The search space was uniformly more constrained than the default configuration, and the constraints cost quality at this signal strength |
 
 ## Limitations
 
@@ -212,6 +268,12 @@ features to k decimals for k = 1..6 and then looking for exact matches. Five pai
 containing a positive, and the estimated effect on PR-AUC is zero, so validation stays row-wise and
 `GroupKFold` is not needed. The method finds rows that are close on every feature at once; it would
 miss rows that differ substantially on one ratio.
+
+**The tuning result is bounded by its search space.** Randomised search was measured and rejected,
+but that holds for the five parameters searched, the ranges given above and 40 iterations on 5
+folds. A space centred on the defaults rather than uniformly tighter than them, or a different
+parameter set, could give a different answer. The conclusion is that the constraints tried here do
+not pay for themselves — not that LightGBM cannot be tuned on this data.
 
 **The split is random, not temporal.** All companies in the file are observed over the same
 period, so there is no way to train on earlier years and validate on later ones. A model that is
