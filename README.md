@@ -96,12 +96,11 @@ reduction of credit terms; under manual review it does not.
 - **Decisions about construction** — whether a column is dropped, whether a transformer earns its
   place — are settled by a paired comparison instead. Both configurations run on the same folds,
   the per-fold differences are taken, and the reported figure is their mean and twice its standard
-  error, `2 * std / sqrt(n)`. Sharing the folds cancels the fold-to-fold spread: differences
-  scatter by about 0.003 where the metric itself scatters by 0.042, so effects an order of
-  magnitude below the threshold above become visible. The standard error assumes independent
-  measurements, and 25 folds are 5 splits repeated 5 times with overlapping rows, so the true
-  uncertainty is somewhat larger than the formula gives — comfortable for telling 0.08 from 0.000,
-  not a test to lean on near the boundary.
+  error, `2 * std / sqrt(n)`. Sharing the folds cancels the fold-to-fold spread, so effects an
+  order of magnitude below the threshold above become visible. The standard error assumes
+  independent measurements, and 25 folds are 5 splits repeated 5 times with overlapping rows, so
+  the true uncertainty is somewhat larger than the formula gives — comfortable for telling 0.08
+  from 0.000, not a test to lean on near the boundary.
 - The holdout is evaluated **once**, at the end, with the final pipeline. Every intermediate
   decision is made on cross-validation.
 - With ~102 positives in the holdout, the confidence interval on the final figure is wide; a gap
@@ -114,13 +113,8 @@ Both cost figures are invented. The dataset contains financial ratios and a bank
 nothing about who might be lending to these companies, so the business context around it has to be
 supplied. The numbers were chosen to be internally consistent — 2000 counterparties at 40 000 PLN
 of average exposure implies roughly 80 M PLN of receivables and, at 60-day terms, annual revenue
-near 480 M PLN, a mid-sized wholesaler where a credit control team of three is plausible.
-
-Exposure is assumed equal across counterparties, which it never is: in a real portfolio a handful
-of large accounts carry much of the receivable, the cost of a false negative varies by orders of
-magnitude between counterparties, and the queue would be ranked by `score × exposure` rather than
-by score alone. The dataset carries no exposure figures, so the simplification is unavoidable. It
-is repeated in Limitations.
+near 480 M PLN, a mid-sized wholesaler where a credit control team of three is plausible. Exposure
+is also assumed equal across counterparties; what that costs is in Limitations.
 
 ## Baselines
 
@@ -160,8 +154,12 @@ worth reviewing, against 2 expected under random ordering.
 The two rows above differ by 0.022, which is far below the sum of their standard deviations. They
 are reported side by side because the difference was established by a paired comparison on
 identical folds — +0.0221 ± 0.0054, better in 24 folds of 25 — and not by reading one mean against
-the other. The same applies to the experiments below: each is a paired difference against the
-default boosting pipeline, and none of them changed the final model.
+the other. Paired differences scatter by about 0.003 where the metric itself scatters by 0.042,
+which is what makes an effect of this size readable at all.
+
+The experiments below are paired differences on identical folds against the default boosting
+pipeline, except the last row, which is measured against `n_estimators=400`. None of them changed
+the final model.
 
 | Experiment | PR-AUC difference |
 |---|---|
@@ -169,23 +167,21 @@ default boosting pipeline, and none of them changed the final model.
 | `RandomizedSearchCV`, 40 iterations | −0.0131 ± 0.0081, 6 folds of 25 |
 | `n_estimators` 800 rather than 400 | +0.0004 ± 0.0014, 13 folds of 25 |
 
-SMOTE was not run. Interpolating synthetic positives is incompatible with the native NaN handling
-in the boosting branch, and the mechanism it would have to guard against is worth stating anyway,
-since it is not the familiar "resample before the split". A resampler changes which rows exist, and
-`sklearn.pipeline.Pipeline` treats it like any other transformer, calling it on the validation fold
-too. Synthetic validation positives would then be interpolations between rows the model was trained
-on, and the positive rate in the fold would rise to 50%, so PR-AUC would be computed on a different
-problem altogether. `imblearn.pipeline.Pipeline` calls `fit_resample` during `fit` only.
+SMOTE was not run; the reason is in Decisions. The leakage mechanism it would have to guard
+against is worth stating anyway, since it is not the familiar "resample before the split". A
+resampler changes which rows exist, and `sklearn.pipeline.Pipeline` treats it like any other
+transformer, calling it on the validation fold too. Synthetic validation positives would then be
+interpolations between rows the model was trained on, and the positive rate in the fold would rise
+to 50%, so PR-AUC would be computed on a different problem altogether.
+`imblearn.pipeline.Pipeline` calls `fit_resample` during `fit` only.
 
 The search result is the interesting one. Every one of the forty candidates was more constrained
 than the default — `min_child_samples` drawn from 50–200 against a default of 20,
 `colsample_bytree` from 0.5–1.0 against 1.0, `reg_lambda` from 0.01–100 against 0. The ranges were
 chosen on the reasoning that 306 positives make overfitting likely, and the measurement contradicts
-it: the constraints cost quality without buying anything. The top ten candidates also span
-0.713–0.724 with per-candidate spreads of 0.031–0.043, so within these ranges the problem is
-insensitive to hyperparameters and the winning row reflects fold noise. Only the tree count, which
-was held fixed inside the search, turned out to matter: +0.0221 ± 0.0054 moving from 100 to 400,
-and nothing beyond that.
+it. The top ten candidates span 0.713–0.724 with per-candidate spreads of 0.031–0.043, so within
+these ranges the problem is insensitive to hyperparameters and the winning row reflects fold noise.
+Only the tree count, which was held fixed inside the search, turned out to matter.
 
 `best_score_` from the search is not reported anywhere. It is the maximum of forty noisy estimates
 and optimistically biased by construction; the selected configuration was re-measured on the
@@ -223,8 +219,9 @@ grounds, recorded in `notebooks/05_feature_engineering.ipynb`.
 | `MissingIndicator(features="all")` rather than the default | The default decides which columns to emit from the data, so the output width would float between folds |
 | `remainder="drop"` written out explicitly | Every column is named in a triplet, but the decision about the remainder should be visible — `Attr21` is what lands there |
 | `set_output(transform="pandas")` on both branches | `feature_names_in_` then catches column mismatches, and names are needed for SHAP and for reading `coef_` |
-| `Attr21` dropped entirely | The whole effect sits in 80 rows where the value is missing, 78 of them bankrupt; on the other 4307 rows the column is worth 0.0054 ± 0.0111. Measured price: 0.734 instead of 0.817 PR-AUC in the boosting branch |
-| Missingness indicators kept in the boosting branch despite measuring −0.0000 ± 0.0008 | Re-measured on the final configuration after the first result was recorded at defaults. The linear branch does use them, where median imputation would otherwise erase missingness, and the two factories stay symmetric; the cost on the boosting side is zero |
+| `Attr21` dropped entirely | The whole effect sits in 80 rows where the value is missing, 78 of them bankrupt; on the other 4307 rows the column is worth 0.0054 ± 0.0111. Measured price: 0.734 instead of 0.817 PR-AUC in the boosting branch. Why the column is treated as an artefact is in Limitations |
+| Missingness indicators kept in the boosting branch despite measuring −0.0000 ± 0.0008 | Re-measured on the final configuration after the first result was recorded at defaults. The two factories stay symmetric and the cost on the boosting side is zero |
+| Missingness indicators kept in the linear branch | Median imputation erases a fact the analysis showed to carry signal on its own. Not measured there, since the linear branch is a baseline — recorded as an argument |
 | `QuantileTransformer` inside the linear pipeline | Tails reach 694× the 99th percentile; `StandardScaler` is linear and does not change shape |
 | `n_quantiles=500` | About 3510 rows in the training part of a fold; the default of 1000 would copy the sample |
 | Median imputation rather than a constant | The mean is inflated by the tails, and a constant becomes a subgroup marker for a tree |
@@ -240,6 +237,7 @@ grounds, recorded in `notebooks/05_feature_engineering.ipynb`.
 | SMOTE not run | Interpolating synthetic positives is incompatible with the native NaN handling in the boosting branch: imputation would have to be added and the comparison would no longer differ by one factor. Recorded as an argument, not a measurement |
 | `n_estimators = 400`, everything else at defaults | Bounded on both sides: +0.0221 ± 0.0054 moving from 100 to 400, +0.0004 ± 0.0014 moving from 400 to 800 |
 | Randomised search rejected | −0.0131 ± 0.0081 against the defaults. The search space was uniformly more constrained than the default configuration, and the constraints cost quality at this signal strength |
+| No experiment tracker | Configuration search ended with the model selection; every comparison was paired, run on fixed folds and recorded in the notebook as it was made, and the notebooks are in git and reproduce from a fixed seed. A tracker addresses the scale at which manual records stop working, and `mlruns/` is not committed, so a reader of the repository would not see one anyway |
 
 ## Limitations
 
@@ -248,20 +246,18 @@ grounds, recorded in `notebooks/05_feature_engineering.ipynb`.
 before the file was published. The population the model is fitted on is therefore not the
 population it would score in production, and the direction of the bias is unknown.
 
-**`Attr21` is probably a collection artefact, and its price is known.** Missingness in the column
-predicts the target almost perfectly — 78 of the 80 rows with a missing value are bankrupt — and
-tree models exploit it whether or not an explicit indicator is supplied, since the marker can be
-reconstructed from the column itself. Constant imputation does not help either: the constant
-becomes the subgroup label. A company that is still trading has last year's filing by definition,
-so the pattern should not recur in production. This cannot be settled inside the data, because the
-same contamination is present in the holdout in the same proportion, and every internal estimate
-would agree with itself while being wrong. The column was dropped and the cost measured: 0.734
-against 0.817.
+**`Attr21` is probably a collection artefact.** Missingness in the column predicts the target
+almost perfectly, and tree models exploit it whether or not an explicit indicator is supplied,
+since the marker can be reconstructed from the column itself. Constant imputation does not help
+either: the constant becomes the subgroup label. A company that is still trading has last year's
+filing by definition, so the pattern should not recur in production. This cannot be settled inside
+the data, because the same contamination is present in the holdout in the same proportion, and
+every internal estimate would agree with itself while being wrong. The column was dropped and the
+price is recorded in Decisions.
 
-**No feature selection was performed, and that conclusion does not travel.** Correlation-based
-selection was measured and rejected, but the measurement holds for 63 features, 4387 rows and a
-regularised linear model. With many more features, fewer rows, or an unregularised model the trade
-would look different.
+**No feature selection was performed, and that conclusion does not travel.** The measurement behind
+it holds for 63 features, 4387 rows and a regularised linear model. With many more features, fewer
+rows, or an unregularised model the trade would look different.
 
 **Near-duplicate detection is conservative.** Near-duplicates were searched by rounding all
 features to k decimals for k = 1..6 and then looking for exact matches. Five pairs turned up, none
@@ -269,11 +265,11 @@ containing a positive, and the estimated effect on PR-AUC is zero, so validation
 `GroupKFold` is not needed. The method finds rows that are close on every feature at once; it would
 miss rows that differ substantially on one ratio.
 
-**The tuning result is bounded by its search space.** Randomised search was measured and rejected,
-but that holds for the five parameters searched, the ranges given above and 40 iterations on 5
-folds. A space centred on the defaults rather than uniformly tighter than them, or a different
-parameter set, could give a different answer. The conclusion is that the constraints tried here do
-not pay for themselves — not that LightGBM cannot be tuned on this data.
+**The tuning result is bounded by its search space.** The rejection holds for the five parameters
+searched, the ranges given in Results and 40 iterations on 5 folds. A space centred on the defaults
+rather than uniformly tighter than them, or a different parameter set, could give a different
+answer. The conclusion is that the constraints tried here do not pay for themselves — not that
+LightGBM cannot be tuned on this data.
 
 **The split is random, not temporal.** All companies in the file are observed over the same
 period, so there is no way to train on earlier years and validate on later ones. A model that is
