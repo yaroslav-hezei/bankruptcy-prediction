@@ -86,3 +86,32 @@ def compare_pipelines(
     cv_b = cross_validate_model(pipe_b, X, y)
 
     return {name: cv_a[name] - cv_b[name] for name in cv_a}
+
+
+def format_paired(diff: np.ndarray) -> str:
+    """Format a paired difference as mean ± 2·SE.
+
+    Four decimals: paired comparisons resolve differences down to ~0.001.
+    """
+    se = diff.std(ddof=1) / np.sqrt(len(diff))
+    return f"{diff.mean():+.4f} ± {2 * se:.4f}"
+
+
+def show_paired(diffs: dict[str, np.ndarray]) -> None:
+    """Print one line per metric: paired difference and how often it improved.
+
+    Ties count as non-improvements, so the counter is a lower bound.
+    """
+    for name, d in diffs.items():
+        print(
+            f"{name:15s} {format_paired(d)}   folds improved: {(d > 0).sum()} / {len(d)}"
+        )
+
+
+def show_absolute(res: dict[str, np.ndarray]) -> None:
+    """Print one line per metric: mean ± std across folds.
+
+    Three decimals: fold-to-fold spread is ~0.04, so the fourth is noise.
+    """
+    for name, v in res.items():
+        print(f"{name:15s} {v.mean():.3f} ± {v.std(ddof=1):.3f}")
